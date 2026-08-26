@@ -1,0 +1,17 @@
+{
+  "name": "ledger",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Recurring cost tracker with SQLite persistence.",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "lint:tokens": "node lint-tokens.js",
+    "check": "npm run lint:tokens && npm test",
+    "start": "node server.js",
+    "start:static": "python3 -m http.server 8080"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

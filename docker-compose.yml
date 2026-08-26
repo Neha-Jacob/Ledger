@@ -1,0 +1,14 @@
+services:
+  ledger:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ledger-data:/data
+    environment:
+      - DB_PATH=/data/ledger.db
+      - PORT=3000
+    restart: unless-stopped
+
+volumes:
+  ledger-data:
