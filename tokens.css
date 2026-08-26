@@ -1,0 +1,116 @@
+/* ============================================================
+   ledger design tokens
+   The single source of truth for every visual value.
+   Nothing in app.css or ui code may use a raw hex or px value.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* --- surfaces --- */
+  --surface-page:     #F7F7F5;
+  --surface-card:     #FFFFFF;
+  --surface-raised:   #F0F0ED;
+  --border-hairline:  #E3E3DE;
+  --border-strong:    #C9C9C2;
+
+  /* --- text --- */
+  --text-primary:     #1F1F1D;
+  --text-secondary:   #6B6B65;
+  --text-muted:       #9A9A93;
+
+  /* --- roles --- */
+  --accent:           #2C6B7F;
+  --accent-bg:        #E4EEF1;
+  --warning-bg:       #FAEEDA;
+  --warning-border:   #EF9F27;
+  --warning-text:     #854F0B;
+  --danger:           #A32D2D;
+  --danger-border:    #E0AEAE;
+
+  /* --- categories --- */
+  --cat-housing:       #7F77DD;
+  --cat-insurance:     #1D9E75;
+  --cat-transport:     #D85A30;
+  --cat-entertainment: #D4537E;
+  --cat-utilities:     #378ADD;
+  --cat-tools:         #888780;
+  --cat-health:        #639922;
+  --cat-other:         #B4B2A9;
+
+  /* --- spacing --- */
+  --space-4:  4px;
+  --space-8:  8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* --- radius --- */
+  --radius-6:  6px;
+  --radius-8:  8px;
+  --radius-12: 12px;
+
+  /* --- type --- */
+  --font-ui:   "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  --size-display: 24px;
+  --size-title:   18px;
+  --size-body:    14px;
+  --size-label:   13px;
+  --size-caption: 11px;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --leading: 1.5;
+
+  /* --- layout --- */
+  --w-main:      940px;
+  --w-panel:     420px;
+  --w-modal:     380px;
+  --w-prose:     380px;
+  --w-tile-min:  180px;
+  --col-amount:  120px;
+  --col-due:     110px;
+  --hatch-a:     5px;
+  --hatch-b:     10px;
+
+  /* --- motion --- */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-page:     #1A1A19;
+  --surface-card:     #232322;
+  --surface-raised:   #2B2B29;
+  --border-hairline:  #3A3A37;
+  --border-strong:    #4E4E49;
+
+  --text-primary:     #EDEDE8;
+  --text-secondary:   #A3A39B;
+  --text-muted:       #75756E;
+
+  --accent:           #7FC4D6;
+  --accent-bg:        #1C3A44;
+  --warning-bg:       #3A2103;
+  --warning-border:   #BA7517;
+  --warning-text:     #FAC775;
+  --danger:           #F09595;
+  --danger-border:    #6B2626;
+
+  --cat-housing:       #AFA9EC;
+  --cat-insurance:     #5DCAA5;
+  --cat-transport:     #F0997B;
+  --cat-entertainment: #ED93B1;
+  --cat-utilities:     #85B7EB;
+  --cat-tools:         #B4B2A9;
+  --cat-health:        #97C459;
+  --cat-other:         #888780;
+}
