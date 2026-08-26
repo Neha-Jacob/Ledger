@@ -19,6 +19,7 @@ db.exec(`
     category      TEXT NOT NULL CHECK(category IN ('housing','insurance','transport','utilities','entertainment','tools','health','other')),
     provider      TEXT NOT NULL DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')),
+    anchorDate    TEXT,
     cancellable   INTEGER NOT NULL DEFAULT 1,
     cancelledDate TEXT,
     notes         TEXT NOT NULL DEFAULT '',
@@ -26,6 +27,11 @@ db.exec(`
     updatedAt     TEXT NOT NULL
   )
 `);
+
+const commitmentColumns = db.prepare("PRAGMA table_info(commitments)").all();
+if (!commitmentColumns.some(column => column.name === "anchorDate")) {
+  db.exec("ALTER TABLE commitments ADD COLUMN anchorDate TEXT");
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS phases (
@@ -42,6 +48,18 @@ db.exec(`
     PRIMARY KEY (commitmentId, id)
   )
 `);
+
+if (!commitmentColumns.some(column => column.name === "anchorDate")) {
+  db.exec(`
+    UPDATE commitments
+    SET anchorDate = (
+      SELECT startDate FROM phases
+      WHERE phases.commitmentId = commitments.id
+      ORDER BY sortOrder LIMIT 1
+    )
+    WHERE anchorDate IS NULL
+  `);
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -104,6 +122,7 @@ function rowToCommitment(row) {
     category: row.category,
     provider: row.provider,
     status: row.status,
+    anchorDate: row.anchorDate || null,
     cancellable: !!row.cancellable,
     cancelledDate: row.cancelledDate || null,
     notes: row.notes,
@@ -122,14 +141,15 @@ function insertCommitment(c) {
   const now = todayISO();
   const id = c.id || genId("c_");
   db.prepare(
-    `INSERT INTO commitments (id, name, category, provider, status, cancellable, cancelledDate, notes, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO commitments (id, name, category, provider, status, anchorDate, cancellable, cancelledDate, notes, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     c.name,
     c.category,
     c.provider || "",
     c.status || "active",
+    c.anchorDate || c.phases?.[0]?.startDate || null,
     c.cancellable === false ? 0 : 1,
     c.cancelledDate || null,
     c.notes || "",
@@ -157,6 +177,12 @@ function insertCommitment(c) {
     });
   }
   return id;
+}
+
+function validateCommitmentWrite(anchorDate, phases) {
+  const phaseValidation = Engine.validatePhases(phases);
+  const anchorValidation = Engine.validateAnchorDate(anchorDate, phases);
+  return [...phaseValidation.errors, ...anchorValidation.errors];
 }
 
 function importData(data) {
@@ -213,9 +239,12 @@ app.post("/api/commitments", (req, res) => {
   if (!c.phases || !c.phases.length) {
     return res.status(400).json({ error: "At least one phase is required" });
   }
-  const phaseValidation = Engine.validatePhases(c.phases);
-  if (!phaseValidation.valid) {
-    return res.status(400).json({ errors: phaseValidation.errors });
+  const errors = validateCommitmentWrite(
+    c.anchorDate || c.phases[0].startDate,
+    c.phases
+  );
+  if (errors.length) {
+    return res.status(400).json({ errors });
   }
   const id = insertCommitment(c);
   const row = db.prepare("SELECT * FROM commitments WHERE id = ?").get(id);
@@ -233,21 +262,32 @@ app.put("/api/commitments/:id", (req, res) => {
     return res.status(400).json({ error: "Name is required", field: "name" });
   }
   if (c.phases) {
-    const phaseValidation = Engine.validatePhases(c.phases);
-    if (!phaseValidation.valid) {
-      return res.status(400).json({ errors: phaseValidation.errors });
+    const errors = validateCommitmentWrite(
+      c.anchorDate ?? existing.anchorDate ?? c.phases[0].startDate,
+      c.phases
+    );
+    if (errors.length) {
+      return res.status(400).json({ errors });
     }
+  } else {
+    const phases = rowToCommitment(existing).phases;
+    const errors = validateCommitmentWrite(
+      c.anchorDate ?? existing.anchorDate ?? phases[0].startDate,
+      phases
+    );
+    if (errors.length) return res.status(400).json({ errors });
   }
 
   const now = todayISO();
   db.prepare(
-    `UPDATE commitments SET name=?, category=?, provider=?, status=?, cancellable=?, cancelledDate=?, notes=?, updatedAt=?
+    `UPDATE commitments SET name=?, category=?, provider=?, status=?, anchorDate=?, cancellable=?, cancelledDate=?, notes=?, updatedAt=?
      WHERE id=?`
   ).run(
     c.name,
     c.category || existing.category,
     c.provider ?? existing.provider,
     c.status || existing.status,
+    c.anchorDate ?? existing.anchorDate,
     c.cancellable === false ? 0 : 1,
     c.cancelledDate || null,
     c.notes ?? existing.notes,
@@ -343,8 +383,10 @@ app.post("/api/import", (req, res) => {
   }
   const phaseErrors = data.commitments.flatMap((c) => {
     if (!c.phases || !c.phases.length) return [];
-    const validation = Engine.validatePhases(c.phases);
-    return validation.valid ? [] : validation.errors;
+    return validateCommitmentWrite(
+      c.anchorDate || c.phases[0].startDate,
+      c.phases
+    );
   });
   if (phaseErrors.length) {
     return res.status(400).json({ errors: phaseErrors });

@@ -124,6 +124,69 @@ test("API preserves successful create and update statuses for valid phases", asy
   assert.equal(updated.response.status, 200);
 });
 
+test("API export, wipe, and import preserve commitments", async () => {
+  const phases = [{
+    id: "p1", startDate: "2026-01-01", endDate: null, amount: 100,
+    currency: "EUR", cycle: "monthly", isEstimate: false, label: "",
+  }];
+  await api("POST", "/api/commitments", {
+    id: "c_round_trip",
+    name: "Round trip",
+    category: "tools",
+    anchorDate: "2025-01-05",
+    provider: "Test provider",
+    status: "active",
+    cancellable: true,
+    notes: "Round trip data",
+    phases,
+  });
+  const original = (await api("GET", "/api/commitments")).body;
+  const exported = (await api("GET", "/api/export")).body;
+  assert.equal(
+    exported.commitments.find(c => c.id === "c_round_trip").anchorDate,
+    "2025-01-05"
+  );
+
+  const wiped = await api("DELETE", "/api/data");
+  assert.equal(wiped.response.status, 200);
+  const imported = await api("POST", "/api/import", exported);
+  const restored = (await api("GET", "/api/commitments")).body;
+
+  assert.equal(imported.response.status, 200);
+  assert.deepEqual(restored.commitments, original.commitments);
+});
+
+test("BR-21 the API rejects an anchor later than the first phase", async () => {
+  const result = await api("POST", "/api/commitments", {
+    ...commitment([{
+      id: "p1", startDate: "2026-01-01", endDate: null, amount: 100,
+      currency: "EUR", cycle: "monthly", isEstimate: false, label: "",
+    }]),
+    anchorDate: "2026-01-02",
+  });
+
+  assert.equal(result.response.status, 400);
+  assert.ok(result.body.errors.length > 0);
+});
+
+test("BR-21 the API rejects an update that moves the anchor past phase one", async () => {
+  const created = await api("POST", "/api/commitments", {
+    ...commitment([{
+      id: "p1", startDate: "2026-01-01", endDate: null, amount: 100,
+      currency: "EUR", cycle: "monthly", isEstimate: false, label: "",
+    }]),
+    anchorDate: "2025-12-01",
+  });
+  const result = await api("PUT", `/api/commitments/${created.body.commitment.id}`, {
+    ...commitment(created.body.commitment.phases),
+    anchorDate: "2026-01-02",
+  });
+  const stored = await api("GET", `/api/commitments/${created.body.commitment.id}`);
+
+  assert.equal(result.response.status, 400);
+  assert.equal(stored.body.commitment.anchorDate, "2025-12-01");
+});
+
 /* ---------- 1. Trial → conversion → active ---------- */
 
 test("integration: trial converts to active and all functions reflect it", () => {
@@ -225,7 +288,7 @@ test("integration: fixed-term contract has correct status and residual obligatio
 
   // Residual obligation = remaining charges × amount
   const residual = E.residualObligation([c], "2026-06-01");
-  const remainingDates = E.chargeDatesInRange(c.phases[0], "2026-06-01", "2026-12-31");
+  const remainingDates = E.chargeDatesInRange(c.phases[0], "2026-06-01", "2026-12-31", c.phases[0].startDate);
   assert.equal(residual, remainingDates.length * 5800);
   assert.ok(residual > 0);
 

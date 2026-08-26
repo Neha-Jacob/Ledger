@@ -16,6 +16,7 @@ Secondary purpose: a practice vehicle for agentic development workflows.
 - A local backend is in scope, runs on localhost only, and does not change NFR-02.
 - NFR-01 now distinguishes the no-network core function requirement from the static mode fully offline path.
 - DoD-04 is met, and API writes must validate phase lists through `Engine.validatePhases`.
+- BR-21 constrains `anchorDate`, which is persisted through API reads and writes and preserved by export/import.
 - Added NFR-08 requiring the engine to run identically in the browser and Node from one file.
 
 **v1.1 (25 Aug 2026)** — reconciled with the working prototype.
@@ -207,7 +208,7 @@ Rent is fixed, immediate and open ended. Spotify is fixed, delayed and open ende
 | `category` | enum | housing, insurance, transport, utilities, entertainment, tools, health, other |
 | `provider` | string | Optional, free text |
 | `status` | enum | active, cancelled, ended |
-| `anchorDate` | date | **New in v1.1.** The billing schedule origin. Defaults to the first phase's start date. Not changed by adding a phase. See BR-19. |
+| `anchorDate` | date | **New in v1.1.** The billing schedule origin. Defaults to the first phase's start date and must be on or before that date. Not changed by adding a phase. See BR-19 and BR-21. |
 | `cancellable` | boolean | False for fixed term contracts inside their minimum period |
 | `cancelledDate` | date or null | **New in v1.1.** Set when status becomes cancelled. Charges after this date are excluded. |
 | `notes` | string | Optional, free text |
@@ -317,6 +318,7 @@ This section is the real specification. Each rule has at least one test in `engi
 | BR-10 | Editing a phase start date must re validate contiguity with its neighbours and reject the edit if it would create a gap or an overlap. |
 | **BR-19** | **A phase boundary changes the amount, not the schedule.** The billing schedule derives from the commitment's `anchorDate` and the cycle in force, never from a phase start date. Design tools has an anchor of the 12th and a phase beginning 1 September; its next charge after 25 August is 12 September at the new amount, not 1 September. |
 | **BR-20** | **A cycle change resets the anchor.** If a new phase specifies a different cycle from the phase before it, the commitment's effective anchor becomes that phase's start date from that point forward. A monthly plan switching to yearly on 1 March bills annually on 1 March. |
+| **BR-21** | A commitment's `anchorDate` must fall on or before the start date of its first phase. An anchor after the first phase begins is a validation error. |
 
 ### 8.3 Trials and delayed starts
 

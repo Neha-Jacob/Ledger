@@ -23,7 +23,7 @@
  * @param {string} from  YYYY-MM-DD
  * @returns {string|null} YYYY-MM-DD, or null if the phase produces no more charges
  */
-function nextChargeDate(phase, from) {
+function nextChargeDate(phase, from, anchorDate) {
   const effectiveFrom = from < phase.startDate ? phase.startDate : from;
   if (phase.endDate && effectiveFrom > phase.endDate) return null;
 
@@ -32,7 +32,7 @@ function nextChargeDate(phase, from) {
   }
 
   if (phase.cycle === "weekly") {
-    const [ay, am, ad] = phase.startDate.split("-").map(Number);
+    const [ay, am, ad] = anchorDate.split("-").map(Number);
     const anchorDow = new Date(ay, am - 1, ad).getDay();
 
     const [fy, fm, fd] = effectiveFrom.split("-").map(Number);
@@ -49,7 +49,7 @@ function nextChargeDate(phase, from) {
   }
 
   if (phase.cycle === "monthly") {
-    const anchorDay = Number(phase.startDate.split("-")[2]);
+    const anchorDay = Number(anchorDate.split("-")[2]);
     const [fy, fm, fd] = effectiveFrom.split("-").map(Number);
 
     let year = fy;
@@ -70,7 +70,7 @@ function nextChargeDate(phase, from) {
   }
 
   if (phase.cycle === "yearly") {
-    const [ay, am, ad] = phase.startDate.split("-").map(Number);
+    const [ay, am, ad] = anchorDate.split("-").map(Number);
     const [fy, fm, fd] = effectiveFrom.split("-").map(Number);
 
     const isLeap = y => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
@@ -96,7 +96,7 @@ function nextChargeDate(phase, from) {
  * anchor itself falls inside it.
  * @returns {string[]}
  */
-function chargeDatesInRange(phase, start, end) {
+function chargeDatesInRange(phase, start, end, anchorDate) {
   if (phase.cycle !== "oneOff" && phase.endDate !== null) {
     const s = new Date(phase.startDate);
     const e = new Date(phase.endDate);
@@ -113,7 +113,7 @@ function chargeDatesInRange(phase, start, end) {
   const dates = [];
   let cursor = effectiveStart;
   for (;;) {
-    const d = nextChargeDate(phase, cursor);
+    const d = nextChargeDate(phase, cursor, anchorDate);
     if (d === null || d > effectiveEnd) break;
     dates.push(d);
     const [y, m, day] = d.split("-").map(Number);
@@ -183,6 +183,21 @@ function validatePhases(phases) {
   }
 
   return errors.length ? { valid: false, errors } : { valid: true, errors: [] };
+}
+
+/**
+ * Validate a commitment billing anchor.
+ * BR-21 the anchor must not be after the first phase starts.
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+function validateAnchorDate(anchorDate, phases) {
+  if (!anchorDate || !phases.length || anchorDate <= phases[0].startDate) {
+    return { valid: true, errors: [] };
+  }
+  return {
+    valid: false,
+    errors: [`Anchor date ${anchorDate} cannot be after first phase start ${phases[0].startDate}`],
+  };
 }
 
 /**
@@ -270,8 +285,9 @@ function committedTotalForMonth(commitments, year, month) {
   let total = 0;
   for (const commitment of commitments) {
     if (commitment.status === "cancelled") continue;
-    for (const phase of commitment.phases) {
-      const dates = chargeDatesInRange(phase, start, end);
+    for (let i = 0; i < commitment.phases.length; i++) {
+      const phase = commitment.phases[i];
+      const dates = chargeDatesInRange(phase, start, end, anchorForPhase(commitment, i));
       for (const date of dates) {
         const active = phaseAt(commitment, date);
         if (active) total += active.amount;
@@ -351,9 +367,10 @@ function residualObligation(commitments, today) {
   for (const commitment of commitments) {
     if (commitment.cancellable !== false) continue;
     if (commitment.status === "cancelled") continue;
-    for (const phase of commitment.phases) {
+    for (let i = 0; i < commitment.phases.length; i++) {
+      const phase = commitment.phases[i];
       if (phase.endDate === null) continue;
-      const dates = chargeDatesInRange(phase, today, phase.endDate);
+      const dates = chargeDatesInRange(phase, today, phase.endDate, anchorForPhase(commitment, i));
       for (const date of dates) {
         total += phase.amount;
       }
@@ -386,8 +403,9 @@ function chargesInRange(commitments, start, end) {
       if (cancelPhase && cancelPhase.amount === 0) continue;
     }
 
-    for (const phase of commitment.phases) {
-      const dates = chargeDatesInRange(phase, start, end);
+    for (let i = 0; i < commitment.phases.length; i++) {
+      const phase = commitment.phases[i];
+      const dates = chargeDatesInRange(phase, start, end, anchorForPhase(commitment, i));
       for (const date of dates) {
         if (commitment.status === "cancelled" && commitment.cancelledDate && date >= commitment.cancelledDate) continue;
         const active = phaseAt(commitment, date);
@@ -408,6 +426,16 @@ function chargesInRange(commitments, start, end) {
   return results;
 }
 
+function anchorForPhase(commitment, phaseIndex) {
+  let anchor = commitment.anchorDate || commitment.phases[0].startDate;
+  for (let i = 1; i <= phaseIndex; i++) {
+    if (commitment.phases[i].cycle !== commitment.phases[i - 1].cycle) {
+      anchor = commitment.phases[i].startDate;
+    }
+  }
+  return anchor;
+}
+
 /**
  * Next charge date for a commitment on or after `today`.
  * Cancelled commitments return null.
@@ -416,25 +444,30 @@ function nextDueFor(commitment, today) {
   if (commitment.status === "cancelled") return null;
   const phase = phaseAt(commitment, today);
   if (!phase) {
-    for (const p of commitment.phases) {
+    for (let i = 0; i < commitment.phases.length; i++) {
+      const p = commitment.phases[i];
       if (p.startDate > today) {
-        return nextChargeDate(p, today);
+        return nextChargeDate(p, today, anchorForPhase(commitment, i));
       }
     }
     return null;
   }
-  const result = nextChargeDate(phase, today);
+  const phaseIndex = commitment.phases.indexOf(phase);
+  const result = nextChargeDate(phase, today, anchorForPhase(commitment, phaseIndex));
   if (result !== null) return result;
-  const idx = commitment.phases.indexOf(phase);
-  for (let i = idx + 1; i < commitment.phases.length; i++) {
-    const next = nextChargeDate(commitment.phases[i], commitment.phases[i].startDate);
+  for (let i = phaseIndex + 1; i < commitment.phases.length; i++) {
+    const next = nextChargeDate(
+      commitment.phases[i],
+      commitment.phases[i].startDate,
+      anchorForPhase(commitment, i)
+    );
     if (next !== null) return next;
   }
   return null;
 }
 
 const Engine = {
-  nextChargeDate, chargeDatesInRange, phaseAt, validatePhases,
+  nextChargeDate, chargeDatesInRange, phaseAt, validatePhases, validateAnchorDate,
   trialConversionDate, statusOf, normalisedMonthly, normalisedAnnual,
   monthlyTotal, committedTotalForMonth, byCategory, upcomingIncreases,
   residualObligation, convert, chargesInRange, nextDueFor

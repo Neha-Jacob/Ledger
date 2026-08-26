@@ -245,13 +245,13 @@ frontend and test suite work on any Node 18+.
 
 | Check | Command | Status |
 |---|---|---|
-| Engine + integration tests | `npm test` | Passing, 33/33 |
-| Token lint | `npm run lint:tokens` | Currently failing. `app.css` has crept away from `tokens.css` (a `box-shadow`, a couple of raw pixel widths, and one raw `#fff` colour). Needs a token added or the value replaced before `npm run check` is clean. |
+| Engine + integration tests | `npm test` | Passing, 45/45 |
+| Token lint | `npm run lint:tokens` | Passing |
 
 The recurrence engine, phase resolution, money normalisation, and
 REST/SQLite persistence layer described above are implemented, not
-stubbed. The remaining outstanding work is bringing `app.css` back into
-compliance with the token contract in [PRD.md §10](./PRD.md).
+stubbed. The API validates phase structure and commitment anchors on every
+write path, and `app.css` complies with the token contract in [PRD.md §10](./PRD.md).
 
 ## 11. What is not covered / restrictions
 
@@ -273,7 +273,3 @@ Known incompleteness / open design questions (see [PRD.md §12.1](./PRD.md)):
   only the current estimate is still undecided.
 - Import validation is best-effort (FR-28, "Should" priority). A malformed
   file can currently fail without a per-record error report.
-- No automated schema/contiguity validation is enforced at the API layer
-  beyond what `server.js` checks inline; `server.js` never imports
-  `engine.js`, so `Engine.validatePhases` exists but is not called on any
-  write path. The API will store an invalid phase list if asked to.

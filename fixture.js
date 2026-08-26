@@ -57,6 +57,7 @@ const FIXTURE = {
     },
     {
       id: "c_tools", name: "Design tools", category: "tools", provider: "",
+      anchorDate: "2024-09-12",
       status: "active", cancellable: true, notes: "Price rise announced",
       phases: [
         { id: "p1", startDate: "2024-09-12", endDate: "2026-08-31", amount: 5100, currency: "EUR", cycle: "monthly", isEstimate: false, label: "" },

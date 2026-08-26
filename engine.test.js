@@ -14,30 +14,30 @@ const eur = n => (n / 100).toFixed(2);
 /* ---------- BR-01..05  recurrence arithmetic ---------- */
 
 test("BR-01 monthly anchored on the 31st clamps to month end", () => {
-  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-02-01"), "2026-02-28");
+  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-02-01", EDGE.anchor31.startDate), "2026-02-28");
 });
 
 test("BR-01 the 31st anchor does not drift after a short month", () => {
-  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-03-01"), "2026-03-31");
-  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-04-01"), "2026-04-30");
-  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-05-01"), "2026-05-31");
+  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-03-01", EDGE.anchor31.startDate), "2026-03-31");
+  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-04-01", EDGE.anchor31.startDate), "2026-04-30");
+  assert.equal(E.nextChargeDate(EDGE.anchor31, "2026-05-01", EDGE.anchor31.startDate), "2026-05-31");
 });
 
 test("BR-02 yearly anchored on 29 Feb falls back to the 28th", () => {
-  assert.equal(E.nextChargeDate(EDGE.leapDay, "2027-01-01"), "2027-02-28");
+  assert.equal(E.nextChargeDate(EDGE.leapDay, "2027-01-01", EDGE.leapDay.startDate), "2027-02-28");
 });
 
 test("BR-02 yearly 29 Feb anchor returns to the 29th in a leap year", () => {
-  assert.equal(E.nextChargeDate(EDGE.leapDay, "2028-01-01"), "2028-02-29");
+  assert.equal(E.nextChargeDate(EDGE.leapDay, "2028-01-01", EDGE.leapDay.startDate), "2028-02-29");
 });
 
 test("BR-03 weekly holds the weekday with no month end adjustment", () => {
-  const d = E.chargeDatesInRange(EDGE.weekly, "2026-08-01", "2026-08-31");
+  const d = E.chargeDatesInRange(EDGE.weekly, "2026-08-01", "2026-08-31", EDGE.weekly.startDate);
   assert.deepEqual(d, ["2026-08-03", "2026-08-10", "2026-08-17", "2026-08-24", "2026-08-31"]);
 });
 
 test("BR-04 a oneOff cycle produces exactly one charge", () => {
-  const d = E.chargeDatesInRange(EDGE.oneOff, "2026-01-01", "2027-12-31");
+  const d = E.chargeDatesInRange(EDGE.oneOff, "2026-01-01", "2027-12-31", EDGE.oneOff.startDate);
   assert.deepEqual(d, ["2026-09-09"]);
 });
 
@@ -47,7 +47,7 @@ test("BR-04 a oneOff cycle never contributes to the monthly total", () => {
 });
 
 test("BR-05 a charge date is a calendar date, unaffected by timezone", () => {
-  const d = E.nextChargeDate(EDGE.anchor31, "2026-02-01");
+  const d = E.nextChargeDate(EDGE.anchor31, "2026-02-01", EDGE.anchor31.startDate);
   assert.match(d, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(d.length, 10);
 });
@@ -73,13 +73,58 @@ test("BR-08 a boundary date belongs to the phase that begins that day", () => {
 });
 
 test("BR-09 a phase shorter than its own cycle produces no charge", () => {
-  assert.deepEqual(E.chargeDatesInRange(EDGE.shortYear, "2026-01-01", "2026-12-31"), []);
+  assert.deepEqual(E.chargeDatesInRange(EDGE.shortYear, "2026-01-01", "2026-12-31", EDGE.shortYear.startDate), []);
 });
 
 test("BR-10 an edit that creates a gap is rejected", () => {
   const edited = JSON.parse(JSON.stringify(EDGE.gap));
   edited[1].startDate = "2026-06-01";
   assert.equal(E.validatePhases(edited).valid, false);
+});
+
+test("BR-19 a phase boundary changes the amount but not the billing schedule", () => {
+  const tools = FIXTURE.commitments.find(c => c.id === "c_tools");
+  const chargeDate = E.nextDueFor(tools, "2026-08-25");
+  const charge = E.chargesInRange([tools], "2026-08-25", "2026-09-12")
+    .find(row => row.date === chargeDate);
+
+  assert.equal(chargeDate, "2026-09-12");
+  assert.equal(charge.amount, 5600);
+});
+
+test("BR-20 a cycle change resets the billing anchor to the phase start", () => {
+  const commitment = {
+    id: "c_cycle_change",
+    status: "active",
+    anchorDate: "2026-01-15",
+    phases: [
+      { startDate: "2026-01-01", endDate: "2026-02-28", amount: 100, currency: "EUR", cycle: "monthly", isEstimate: false, label: "" },
+      { startDate: "2026-03-01", endDate: null, amount: 1200, currency: "EUR", cycle: "yearly", isEstimate: false, label: "" },
+    ],
+  };
+
+  assert.equal(E.nextDueFor(commitment, "2026-03-02"), "2027-03-01");
+});
+
+test("BR-20 the anchor holds at the cycle change through later phases", () => {
+  const c = {
+    id: "c_switch", status: "active", cancellable: true, category: "tools",
+    anchorDate: "2025-01-05",
+    phases: [
+      { id: "p1", startDate: "2025-01-05", endDate: "2026-02-28", amount: 1000, currency: "EUR", cycle: "monthly", isEstimate: false, label: "" },
+      { id: "p2", startDate: "2026-03-01", endDate: "2026-12-31", amount: 12000, currency: "EUR", cycle: "yearly", isEstimate: false, label: "" },
+      { id: "p3", startDate: "2027-01-01", endDate: null, amount: 13000, currency: "EUR", cycle: "yearly", isEstimate: false, label: "" },
+    ],
+  };
+
+  assert.equal(E.nextDueFor(c, "2027-01-01"), "2027-03-01");
+});
+
+test("BR-21 an anchor after the first phase start is rejected", () => {
+  const phases = [{ startDate: "2026-01-01", endDate: null }];
+  const validation = E.validateAnchorDate("2026-01-02", phases);
+
+  assert.equal(validation.valid, false);
 });
 
 /* ---------- BR-11..14  trials and delayed starts ---------- */
