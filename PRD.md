@@ -2,13 +2,21 @@
 
 **A recurring cost tracker for bills, subscriptions and trials**
 
-Version 1.1 · 25 August 2026 · Status: in build
+Version 1.2 · 26 August 2026 · Status: in build
 
 Secondary purpose: a practice vehicle for agentic development workflows.
 
 ---
 
 ## Changelog
+
+**v1.2 (26 Aug 2026)** — reconciled with the client-server prototype.
+
+- Architecture is now client-server: an Express REST API with `node:sqlite` persistence, plus Docker support. Stage 5 is complete.
+- A local backend is in scope, runs on localhost only, and does not change NFR-02.
+- NFR-01 now distinguishes the no-network core function requirement from the static mode fully offline path.
+- DoD-04 is met, and API writes must validate phase lists through `Engine.validatePhases`.
+- Added NFR-08 requiring the engine to run identically in the browser and Node from one file.
 
 **v1.1 (25 Aug 2026)** — reconciled with the working prototype.
 
@@ -96,6 +104,8 @@ An individual who manages their own recurring costs and holds somewhere between 
 ### 4.3 Explicitly out of scope for version 1
 
 Listing these matters as much as listing the features, because scope creep is what kills a practice project.
+
+A local backend is in scope for version 1. It runs on localhost only, so personal data remains on the device and NFR-02 still holds. The following remain out of scope:
 
 - Bank or open banking connections of any kind
 - Accounts, login, sync or multi device support
@@ -332,13 +342,14 @@ This section is the real specification. Each rule has at least one test in `engi
 
 | ID | Requirement |
 |---|---|
-| NFR-01 | No network request is required for any core function. The application works fully offline. |
+| NFR-01 | No external network request is required for any core function. The client-server application runs locally; static mode is the fully offline path. |
 | NFR-02 | No personal data leaves the device. There is no telemetry and no analytics. |
 | NFR-03 | Projecting twelve months of charges across two hundred commitments completes in under one hundred milliseconds. |
 | NFR-04 | All calculation logic sits in a pure module with no dependency on the UI, storage layer or system clock. The current date is always passed in as a parameter. Enforced by a test that greps `engine.js` for clock access. |
 | NFR-05 | Test coverage of `engine.js` is complete for every rule in section 8. Coverage of the UI layer is not required. |
 | NFR-06 | The interface is usable at 360 pixels wide, respects `prefers-reduced-motion`, and meets WCAG AA contrast in both themes. |
 | NFR-07 | **Revised in v1.1.** Every visual value in a component originates from a token in `tokens.css`. No raw colour or unapproved pixel value appears in `app.css`. Enforced by `npm run lint:tokens`, which fails the build. |
+| NFR-08 | The engine runs identically in the browser and in Node from one shared file. |
 
 NFR-04 deserves emphasis. Passing the current date in as a parameter rather than reading the system clock is what makes the entire test suite deterministic, and a deterministic test suite is the precondition for handing work to an agent.
 
@@ -390,7 +401,7 @@ Keep these when extending the interface. They are what makes it read as a ledger
 
 ## 11. Development workflow
 
-*Revised in v1.1 to reflect actual project state.*
+*Revised in v1.2 to reflect actual project state.*
 
 ### 11.1 The loop
 
@@ -414,7 +425,7 @@ The value is in steps 3 and 5. Restricting context is what stops plausible-but-w
 | 2 | Recurrence engine, BR-01 to BR-05, BR-19, BR-20 | Unit tests with fixed input dates | Not started |
 | 3 | Phase resolution, BR-06 to BR-14 | Unit tests including invalid phase lists | Not started |
 | 4 | Money and normalisation, BR-15 to BR-18 | Unit tests asserting exact integer results | Not started |
-| 5 | Storage, export and import | Round trip test: export, wipe, import, deep equality | Not started |
+| 5 | Storage, export and import | Round trip test: export, wipe, import, deep equality | **Done** |
 
 Stage 2 first. Everything downstream depends on dates being right.
 
@@ -422,10 +433,10 @@ Stage 2 first. Everything downstream depends on dates being right.
 
 Settled, not suggested.
 
-- **No dependencies.** Node 18+ for `node:test`, nothing else.
+- **Client-server architecture.** Express REST API with `node:sqlite` persistence, packaged with Docker.
 - **Plain CSS custom properties** for tokens. No preprocessor, no framework.
 - **Vanilla JS** for the UI, so the calculation module has nothing to depend on and the whole thing ports cleanly to any framework later.
-- **IndexedDB** for stage 5.
+- **Static mode** remains available as the fully offline path.
 
 ### 11.4 Known failure modes when delegating
 
@@ -447,11 +458,12 @@ Version 1 is complete when all of the following are true.
 | DoD-01 | Every Must priority requirement in section 7 is implemented. |
 | DoD-02 | Every rule in section 8 has at least one passing test named after its ID. |
 | DoD-03 | **Revised in v1.1.** Loading `fixture.js` produces every figure in the table in section 5.2, computed rather than stubbed. |
-| DoD-04 | The `STUB` object in `engine.js` is empty. |
+| DoD-04 | **Met in v1.2.** The `STUB` object in `engine.js` is empty. |
 | DoD-05 | A trial converting within thirty days appears in the dashboard warning strip without any manual action. |
 | DoD-06 | Data survives an application restart, and a full export and import round trip produces identical data. |
 | DoD-07 | `npm run check` passes: tokens clean, all tests green. |
 | DoD-08 | `engine.js` contains no reference to the system clock. |
+| DoD-09 | `Engine.validatePhases` is called on every API write path. |
 
 ### 12.1 Remaining open questions
 

@@ -73,6 +73,8 @@
   --w-modal:     380px;
   --w-prose:     380px;
   --w-tile-min:  180px;
+  --w-calendar:  280px;
+  --w-day:      34px;
   --col-amount:  120px;
   --col-due:     110px;
   --hatch-a:     5px;

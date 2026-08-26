@@ -7,7 +7,122 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const E = require("./engine.js");
+const { EDGE } = require("./fixture.js");
+
+let serverProcess;
+let baseUrl;
+let tempDir;
+
+test.before(async () => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-integration-"));
+  serverProcess = spawn(process.execPath, ["server.js"], {
+    cwd: __dirname,
+    env: {
+      ...process.env,
+      DB_PATH: path.join(tempDir, "test.db"),
+      PORT: "0",
+    },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+
+  let output = "";
+  await new Promise((resolve, reject) => {
+    const onData = chunk => {
+      output += chunk;
+      const match = output.match(/Ledger running at http:\/\/localhost:(\d+)/);
+      if (match) {
+        baseUrl = `http://localhost:${match[1]}`;
+        resolve();
+      }
+    };
+    serverProcess.stdout.on("data", onData);
+    serverProcess.once("error", reject);
+    serverProcess.once("exit", code => {
+      reject(new Error(`server exited before startup (${code}): ${output}`));
+    });
+  });
+});
+
+test.after(() => {
+  if (serverProcess) serverProcess.kill();
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+async function api(method, endpoint, body) {
+  const response = await fetch(baseUrl + endpoint, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { response, body: await response.json() };
+}
+
+const commitment = phases => ({
+  name: "Integration test",
+  category: "tools",
+  phases,
+});
+
+test("API rejects overlapping phases on create without creating a row", async () => {
+  const before = (await api("GET", "/api/commitments")).body.commitments.length;
+  const result = await api("POST", "/api/commitments", commitment(EDGE.overlap));
+  const after = (await api("GET", "/api/commitments")).body.commitments.length;
+
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(result.body.errors, E.validatePhases(EDGE.overlap).errors);
+  assert.equal(after, before);
+});
+
+test("API rejects a gap on create", async () => {
+  const result = await api("POST", "/api/commitments", commitment(EDGE.gap));
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(result.body.errors, E.validatePhases(EDGE.gap).errors);
+});
+
+test("API rejects a non-final null phase on create", async () => {
+  const result = await api("POST", "/api/commitments", commitment(EDGE.midNull));
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(result.body.errors, E.validatePhases(EDGE.midNull).errors);
+});
+
+test("API rejects overlapping phases on update without changing stored phases", async () => {
+  const validPhases = [{
+    id: "p1", startDate: "2026-01-01", endDate: null, amount: 100,
+    currency: "EUR", cycle: "monthly", isEstimate: false, label: "",
+  }];
+  const created = await api("POST", "/api/commitments", commitment(validPhases));
+  const id = created.body.commitment.id;
+  const result = await api("PUT", `/api/commitments/${id}`, {
+    ...commitment(EDGE.overlap),
+    name: "Updated integration test",
+  });
+  const stored = await api("GET", `/api/commitments/${id}`);
+
+  assert.equal(created.response.status, 201);
+  assert.equal(result.response.status, 400);
+  assert.deepEqual(result.body.errors, E.validatePhases(EDGE.overlap).errors);
+  assert.deepEqual(stored.body.commitment.phases, validPhases);
+});
+
+test("API preserves successful create and update statuses for valid phases", async () => {
+  const phases = [{
+    id: "p1", startDate: "2027-01-01", endDate: null, amount: 100,
+    currency: "EUR", cycle: "monthly", isEstimate: false, label: "",
+  }];
+  const created = await api("POST", "/api/commitments", commitment(phases));
+  const updated = await api("PUT", `/api/commitments/${created.body.commitment.id}`, {
+    ...commitment(phases),
+    name: "Updated valid integration test",
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.equal(updated.response.status, 200);
+});
 
 /* ---------- 1. Trial → conversion → active ---------- */
 

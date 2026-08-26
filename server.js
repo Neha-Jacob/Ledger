@@ -2,6 +2,7 @@ const express = require("express");
 const { DatabaseSync } = require("node:sqlite");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const Engine = require("./engine.js");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "ledger.db");
 const PORT = process.env.PORT || 3000;
@@ -212,6 +213,10 @@ app.post("/api/commitments", (req, res) => {
   if (!c.phases || !c.phases.length) {
     return res.status(400).json({ error: "At least one phase is required" });
   }
+  const phaseValidation = Engine.validatePhases(c.phases);
+  if (!phaseValidation.valid) {
+    return res.status(400).json({ errors: phaseValidation.errors });
+  }
   const id = insertCommitment(c);
   const row = db.prepare("SELECT * FROM commitments WHERE id = ?").get(id);
   res.status(201).json({ commitment: rowToCommitment(row) });
@@ -226,6 +231,12 @@ app.put("/api/commitments/:id", (req, res) => {
   const c = req.body;
   if (!c.name || !c.name.trim()) {
     return res.status(400).json({ error: "Name is required", field: "name" });
+  }
+  if (c.phases) {
+    const phaseValidation = Engine.validatePhases(c.phases);
+    if (!phaseValidation.valid) {
+      return res.status(400).json({ errors: phaseValidation.errors });
+    }
   }
 
   const now = todayISO();
@@ -330,6 +341,14 @@ app.post("/api/import", (req, res) => {
   if (!data.commitments || !Array.isArray(data.commitments)) {
     return res.status(400).json({ error: "Invalid format: commitments array required" });
   }
+  const phaseErrors = data.commitments.flatMap((c) => {
+    if (!c.phases || !c.phases.length) return [];
+    const validation = Engine.validatePhases(c.phases);
+    return validation.valid ? [] : validation.errors;
+  });
+  if (phaseErrors.length) {
+    return res.status(400).json({ errors: phaseErrors });
+  }
   importData(data);
   res.json({ ok: true, imported: data.commitments.length });
 });
@@ -340,6 +359,8 @@ app.delete("/api/data", (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`Ledger running at http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : PORT;
+  console.log(`Ledger running at http://localhost:${port}`);
 });
